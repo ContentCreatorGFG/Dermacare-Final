@@ -376,12 +376,21 @@ def validate_image(image_path, analysis_type='skin'):
     texture_variation = np.std(gray) / 255.0
     if texture_variation < 0.03:
         return {'valid': False, 'message': 'Image lacks detail. Please upload a clear photo.'}
-    
-    # Skip strict face/hair detection because OpenCV Haar cascades are often unreliable 
-    # and falsely reject valid photos (e.g. rejecting faces because eyes aren't clearly visible,
-    # or rejecting scalps because they have "too much skin color").
-    
-    # We will just do a basic check to ensure it's a valid image and let the AI models do their job.
+
+    # Check if the image contains AT LEAST some human skin tones
+    # This prevents users from uploading random images of text or objects
+    hsv = cv2.cvtColor(img, cv2.COLOR_BGR2HSV)
+    # Generous skin tone range covering all ethnicities
+    lower_skin = np.array([0, 10, 20], dtype=np.uint8)
+    upper_skin = np.array([25, 200, 255], dtype=np.uint8)
+    skin_mask = cv2.inRange(hsv, lower_skin, upper_skin)
+    skin_percentage = np.sum(skin_mask > 0) / (height * width)
+
+    if skin_percentage < 0.02:
+        return {'valid': False, 'message': '❌ No skin detected. Please upload a clear photo of a real face or scalp.'}
+
+    # We skip the strict, buggy face/hair Haar cascade detection 
+    # and just ensure it's a valid, clear image to let the AI models do their job.
     return {'valid': True, 'message': 'Valid image'}
 
 # ============================================

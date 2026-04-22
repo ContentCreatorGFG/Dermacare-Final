@@ -47,21 +47,21 @@ groq_client = Groq(api_key=GROQ_API_KEY)
 # ============================================
 try:
     skin_model = joblib.load('models/skin_model.pkl')
-    skin_le = joblib.load('models/label_encoder.pkl')
-    print("[OK] Skin AI Model loaded!")
-except Exception as e:
+    skin_le = joblib.load('models/skin_label_encoder.pkl')
+    print("✅ Skin AI Model loaded!")
+except:
     skin_model = None
     skin_le = None
-    print(f"[WARN] Skin model not found: {e}")
+    print("⚠️ Skin model not found")
 
 try:
     hair_model = joblib.load('models/hair_model.pkl')
     hair_le = joblib.load('models/hair_label_encoder.pkl')
-    print("[OK] Hair AI Model loaded!")
-except Exception as e:
+    print("✅ Hair AI Model loaded!")
+except:
     hair_model = None
     hair_le = None
-    print(f"[WARN] Hair model not found: {e}")
+    print("⚠️ Hair model not found")
 
 # ============================================
 # LOAD PRODUCTS TO MONGODB
@@ -69,9 +69,9 @@ except Exception as e:
 try:
     if db.products.count_documents({}) == 0:
         db.load_products_from_csv('data/dermacare_dataset.csv')
-    print(f"[OK] Products in MongoDB: {db.products.count_documents({})}")
+    print(f"✅ Products in MongoDB: {db.products.count_documents({})}")
 except Exception as e:
-    print(f"[WARN] Could not load products: {e}")
+    print(f"⚠️ Could not load products: {e}")
 
 # ============================================
 # DEMO PRODUCTS DATABASE (FALLBACK)
@@ -421,10 +421,34 @@ def validate_image(image_path, analysis_type='skin'):
     skin_mask = cv2.inRange(hsv, lower_skin, upper_skin)
     skin_percentage = np.sum(skin_mask > 0) / (height * width)
     
+    # HAIR ANALYSIS: Should REJECT faces and ACCEPT scalp/hair images
     if analysis_type == 'hair':
-        return {'valid': True, 'message': 'Valid hair/scalp image'}
+        # CRITICAL FIX: Reject if face is detected OR too much skin is visible
+        if is_face:
+            return {'valid': False, 'message': '❌ HAIR ANALYSIS: Face detected. Please upload a CLEAR SCALP or HAIR photo only (top/back of head, no face).'}
+        
+        if skin_percentage > 0.25:  # More than 25% skin visible
+            return {'valid': False, 'message': '❌ HAIR ANALYSIS: Too much skin/face visible. Please upload a photo focused on SCALP or HAIR only.'}
+        
+        # Check if it's actually a hair/scalp image
+        is_scalp = (scalp_density > 0.05 or has_hair_strands or edge_density > 0.08)
+        
+        if is_scalp:
+            return {'valid': True, 'message': 'Valid hair/scalp image'}
+        else:
+            return {'valid': False, 'message': '❌ HAIR ANALYSIS: No hair or scalp detected. Please upload a clear photo of your SCALP or HAIR.'}
+    
+    # SKIN ANALYSIS: Should ACCEPT faces and REJECT hair-only images
     else:  # skin analysis
-        return {'valid': True, 'message': 'Valid face image'}
+        if is_face:
+            return {'valid': True, 'message': 'Valid face image'}
+        
+        # If no face detected, check if it's a hair image (should be rejected)
+        is_hair_only = (scalp_density > 0.05 or has_hair_strands or edge_density > 0.08)
+        if is_hair_only:
+            return {'valid': False, 'message': '❌ SKIN ANALYSIS: Hair/Scalp detected. Please upload a CLEAR FACE PHOTO only.'}
+        
+        return {'valid': False, 'message': '❌ SKIN ANALYSIS: No face detected. Please upload a CLEAR FACE PHOTO only.'}
 
 # ============================================
 # SKIN DETECTION

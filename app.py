@@ -377,78 +377,12 @@ def validate_image(image_path, analysis_type='skin'):
     if texture_variation < 0.03:
         return {'valid': False, 'message': 'Image lacks detail. Please upload a clear photo.'}
     
-    # Face Detection
-    face_cascade = cv2.CascadeClassifier(cv2.data.haarcascades + 'haarcascade_frontalface_default.xml')
-    eye_cascade = cv2.CascadeClassifier(cv2.data.haarcascades + 'haarcascade_eye.xml')
+    # Skip strict face/hair detection because OpenCV Haar cascades are often unreliable 
+    # and falsely reject valid photos (e.g. rejecting faces because eyes aren't clearly visible,
+    # or rejecting scalps because they have "too much skin color").
     
-    # More sensitive face detection
-    faces = face_cascade.detectMultiScale(gray, scaleFactor=1.05, minNeighbors=5, minSize=(60, 60))
-    if len(faces) == 0:
-        faces = face_cascade.detectMultiScale(gray, scaleFactor=1.03, minNeighbors=3, minSize=(50, 50))
-    if len(faces) == 0:
-        faces = face_cascade.detectMultiScale(gray, scaleFactor=1.01, minNeighbors=2, minSize=(40, 40))
-    
-    has_eyes = False
-    for (x, y, w, h) in faces:
-        roi_gray = gray[y:y+h, x:x+w]
-        eyes = eye_cascade.detectMultiScale(roi_gray, 1.05, 5)
-        if len(eyes) >= 1:
-            has_eyes = True
-            break
-    
-    is_face = len(faces) >= 1 and has_eyes
-    
-    # Hair/Scalp Detection
-    # Get upper portion of image (where hair usually is)
-    scalp_region = gray[0:int(height*0.4), :]
-    scalp_edges = cv2.Canny(scalp_region, 30, 150)
-    scalp_density = np.mean(scalp_edges) / 255.0
-    
-    # Detect hair strands using line detection
-    edges = cv2.Canny(gray, 30, 150)
-    lines = cv2.HoughLinesP(edges, 1, np.pi/180, 40, minLineLength=15, maxLineGap=8)
-    has_hair_strands = lines is not None and len(lines) > 8
-    
-    # Check for scalp-specific features
-    edge_density = np.mean(edges) / 255.0
-    
-    # Check if image contains face-like features (skin tones)
-    # Convert to HSV for skin detection
-    hsv = cv2.cvtColor(img, cv2.COLOR_BGR2HSV)
-    # Skin color range in HSV
-    lower_skin = np.array([0, 20, 70], dtype=np.uint8)
-    upper_skin = np.array([20, 255, 255], dtype=np.uint8)
-    skin_mask = cv2.inRange(hsv, lower_skin, upper_skin)
-    skin_percentage = np.sum(skin_mask > 0) / (height * width)
-    
-    # HAIR ANALYSIS: Should REJECT faces and ACCEPT scalp/hair images
-    if analysis_type == 'hair':
-        # CRITICAL FIX: Reject if face is detected OR too much skin is visible
-        if is_face:
-            return {'valid': False, 'message': '❌ HAIR ANALYSIS: Face detected. Please upload a CLEAR SCALP or HAIR photo only (top/back of head, no face).'}
-        
-        if skin_percentage > 0.25:  # More than 25% skin visible
-            return {'valid': False, 'message': '❌ HAIR ANALYSIS: Too much skin/face visible. Please upload a photo focused on SCALP or HAIR only.'}
-        
-        # Check if it's actually a hair/scalp image
-        is_scalp = (scalp_density > 0.05 or has_hair_strands or edge_density > 0.08)
-        
-        if is_scalp:
-            return {'valid': True, 'message': 'Valid hair/scalp image'}
-        else:
-            return {'valid': False, 'message': '❌ HAIR ANALYSIS: No hair or scalp detected. Please upload a clear photo of your SCALP or HAIR.'}
-    
-    # SKIN ANALYSIS: Should ACCEPT faces and REJECT hair-only images
-    else:  # skin analysis
-        if is_face:
-            return {'valid': True, 'message': 'Valid face image'}
-        
-        # If no face detected, check if it's a hair image (should be rejected)
-        is_hair_only = (scalp_density > 0.05 or has_hair_strands or edge_density > 0.08)
-        if is_hair_only:
-            return {'valid': False, 'message': '❌ SKIN ANALYSIS: Hair/Scalp detected. Please upload a CLEAR FACE PHOTO only.'}
-        
-        return {'valid': False, 'message': '❌ SKIN ANALYSIS: No face detected. Please upload a CLEAR FACE PHOTO only.'}
+    # We will just do a basic check to ensure it's a valid image and let the AI models do their job.
+    return {'valid': True, 'message': 'Valid image'}
 
 # ============================================
 # SKIN DETECTION
